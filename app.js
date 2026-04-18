@@ -166,6 +166,32 @@ let map;
 const markers = new Map(); // id -> {el, marker, popup}
 
 function initMap() {
+  const mapEl = document.getElementById('map');
+
+  // WebGL fallback — some in-app browsers block WebGL in iframes
+  const supportsWebGL = (() => {
+    try {
+      const c = document.createElement('canvas');
+      return !!(c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl'));
+    } catch (e) { return false; }
+  })();
+
+  if (!supportsWebGL || typeof maplibregl === 'undefined' || !maplibregl.supported?.()) {
+    mapEl.innerHTML = `
+      <div class="map-fallback">
+        <div class="map-fallback-inner">
+          <strong>Map unavailable in this browser</strong>
+          <p>Your browser blocks the map tiles. Switch to the <button class="fallback-link" onclick="document.querySelector('[data-testid=tab-list]').click()">list view</button> to see all 24 bars, or open this link in Safari / Chrome directly.</p>
+        </div>
+      </div>`;
+    // Auto-switch to list view for better UX
+    setTimeout(() => {
+      const listTab = document.querySelector('[data-testid="tab-list"]');
+      if (listTab) listTab.click();
+    }, 100);
+    return;
+  }
+
   map = new maplibregl.Map({
     container: 'map',
     style: 'https://tiles.openfreemap.org/styles/positron',
@@ -180,13 +206,27 @@ function initMap() {
 
   // Apply dark tint if in dark mode
   if (document.documentElement.getAttribute('data-theme') === 'dark') {
-    document.getElementById('map').classList.add('dark-tiles');
+    mapEl.classList.add('dark-tiles');
   }
 
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
   map.on('load', () => {
     renderMarkers();
+    // Force resize in case container was 0-height at init (common in iframe wrappers)
+    setTimeout(() => map.resize(), 50);
+    setTimeout(() => map.resize(), 500);
+  });
+
+  // Re-resize whenever container dimensions change (iframe layout shifts)
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => { try { map.resize(); } catch(e) {} });
+    ro.observe(mapEl);
+  }
+
+  // Handle page visibility — iOS sometimes pauses rendering
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && map) setTimeout(() => map.resize(), 100);
   });
 }
 
@@ -200,11 +240,13 @@ function createMarkerElement(v) {
   el.setAttribute('role', 'button');
   el.setAttribute('aria-label', `${v.name}, ${halfL} kr per halvliter`);
   el.innerHTML = `
-    <svg viewBox="0 0 34 40" xmlns="http://www.w3.org/2000/svg">
-      <path class="pin-bg" d="M17 0C7.6 0 0 7.3 0 16.4 0 28.5 15 39.4 16 39.9c.3.2.7.2 1 0C18 39.4 34 28.5 34 16.4 34 7.3 26.4 0 17 0z"/>
-      <circle cx="17" cy="16" r="11" fill="white" opacity="0.95"/>
-      <text class="pin-price" x="17" y="16" fill="#0b1d2a">${halfL}</text>
-    </svg>
+    <div class="map-marker-inner">
+      <svg viewBox="0 0 34 40" xmlns="http://www.w3.org/2000/svg">
+        <path class="pin-bg" d="M17 0C7.6 0 0 7.3 0 16.4 0 28.5 15 39.4 16 39.9c.3.2.7.2 1 0C18 39.4 34 28.5 34 16.4 34 7.3 26.4 0 17 0z"/>
+        <circle cx="17" cy="16" r="11" fill="white" opacity="0.95"/>
+        <text class="pin-price" x="17" y="16" fill="#0b1d2a">${halfL}</text>
+      </svg>
+    </div>
   `;
   return el;
 }
