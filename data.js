@@ -1,5 +1,5 @@
 // Oslo Beer Tracker — Seed Data
-// Prices compiled from publicly reported data (meravoslo.no, pilsposten.com, routesnorth.com) — May 2025
+// Prices compiled from publicly reported data (meravoslo.no May 2025, pilsposten.com 2025/26) — last QA April 2026
 // Coordinates are approximate for demo purposes.
 
 export const NEIGHBORHOODS = [
@@ -77,11 +77,11 @@ export const VENUES = [
     lat: 59.9158,
     lng: 10.7472,
     beer: { brand: 'Ringnes', volume: 0.5, price: 69 },
-    happyHour: { price: 59, volume: 0.5, until: '21:00', days: 'Mon–Sun' },
+    happyHour: { price: 59, volume: 0.5, until: '14:00', days: 'Mon–Sun' },
     hours: 'Mon–Sat 14:00–03:00, Sun 16:00–01:00',
     amenities: ['food', 'sports_tv'],
-    lastUpdated: '2025-03-28',
-    blurb: 'Torggata stalwart. Friendly staff, solid bargain, always a seat at the bar.',
+    lastUpdated: '2026-04-18',
+    blurb: 'Torggata stalwart. Friendly staff, solid bargain. Morning happy hour (10–14) is the unsung deal of Sentrum.',
   },
   {
     id: 'luna-park',
@@ -160,11 +160,11 @@ export const VENUES = [
     address: 'Hagegata 22, 0653 Oslo',
     lat: 59.9162,
     lng: 10.7743,
-    beer: { brand: 'Ringnes', volume: 0.5, price: 74 },
+    beer: { brand: 'Ringnes', volume: 0.5, price: 73 },
     happyHour: null,
     hours: 'Mon–Sat 12:00–01:30, Sun 13:00–22:00',
     amenities: ['food', 'sports_tv'],
-    lastUpdated: '2025-02-28',
+    lastUpdated: '2026-04-18',
     blurb: 'Tøyen neighborhood pub — the cheap pint anchor of the east side.',
   },
   {
@@ -216,11 +216,11 @@ export const VENUES = [
     address: 'Thorvald Meyers gate 56, 0552 Oslo',
     lat: 59.9249,
     lng: 10.7599,
-    beer: { brand: 'Pilsner', volume: 0.4, price: 92 },
+    beer: { brand: 'Pilsner', volume: 0.4, price: 83 },
     happyHour: { price: 74, volume: 0.4, until: '20:00', days: 'Mon–Sun' },
     hours: 'Mon–Sat 15:00–02:00',
     amenities: ['utepils', 'food'],
-    lastUpdated: '2025-03-25',
+    lastUpdated: '2026-04-18',
     blurb: 'Løkka classic with a sunny sidewalk spill-out.',
   },
   {
@@ -342,11 +342,11 @@ export const VENUES = [
     address: 'Akershusstranda 25, 0150 Oslo',
     lat: 59.9038,
     lng: 10.7403,
-    beer: { brand: 'Isbjørn', volume: 0.4, price: 92 },
+    beer: { brand: 'Isbjørn', volume: 0.4, price: 89 },
     happyHour: null,
     hours: 'Wed–Sun 16:00–23:00',
     amenities: ['utepils', 'food'],
-    lastUpdated: '2025-04-08',
+    lastUpdated: '2026-04-18',
     blurb: 'Waterfront food hall with fjord views. Come for utepils, stay for the sunset.',
   },
   {
