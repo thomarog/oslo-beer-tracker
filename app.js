@@ -165,44 +165,48 @@ function getSortedVenues(venues) {
 let map;
 const markers = new Map(); // id -> {el, marker, popup}
 
+function showMapFallback(reason) {
+  const mapEl = document.getElementById('map');
+  if (!mapEl) return;
+  mapEl.innerHTML = `
+    <div class="map-fallback">
+      <div class="map-fallback-inner">
+        <strong>Map couldn’t load</strong>
+        <p>Switch to the <button class="fallback-link" onclick="document.querySelector('[data-testid=tab-list]').click()">list view</button> to browse all 24 bars.</p>
+      </div>
+    </div>`;
+  console.warn('Map fallback:', reason);
+}
+
 function initMap() {
   const mapEl = document.getElementById('map');
 
-  // WebGL fallback — some in-app browsers block WebGL in iframes
-  const supportsWebGL = (() => {
-    try {
-      const c = document.createElement('canvas');
-      return !!(c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl'));
-    } catch (e) { return false; }
-  })();
-
-  if (!supportsWebGL || typeof maplibregl === 'undefined' || !maplibregl.supported?.()) {
-    mapEl.innerHTML = `
-      <div class="map-fallback">
-        <div class="map-fallback-inner">
-          <strong>Map unavailable in this browser</strong>
-          <p>Your browser blocks the map tiles. Switch to the <button class="fallback-link" onclick="document.querySelector('[data-testid=tab-list]').click()">list view</button> to see all 24 bars, or open this link in Safari / Chrome directly.</p>
-        </div>
-      </div>`;
-    // Auto-switch to list view for better UX
-    setTimeout(() => {
-      const listTab = document.querySelector('[data-testid="tab-list"]');
-      if (listTab) listTab.click();
-    }, 100);
+  if (typeof maplibregl === 'undefined') {
+    showMapFallback('maplibregl not loaded');
     return;
   }
 
-  map = new maplibregl.Map({
-    container: 'map',
-    style: 'https://tiles.openfreemap.org/styles/positron',
-    center: [10.7522, 59.9139], // Oslo
-    zoom: 12.5,
-    maxBounds: [
-      [10.55, 59.82],
-      [10.92, 60.02],
-    ],
-  });
+  try {
+    map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/positron',
+      center: [10.7522, 59.9139], // Oslo
+      zoom: 12.5,
+      maxBounds: [
+        [10.55, 59.82],
+        [10.92, 60.02],
+      ],
+    });
+  } catch (err) {
+    showMapFallback('constructor threw: ' + err.message);
+    return;
+  }
   window.__map = map;
+
+  map.on('error', (e) => {
+    // Don’t show fallback for tile errors — only catastrophic style/webgl failures
+    console.warn('Map error:', e?.error?.message || e);
+  });
 
   // Apply dark tint if in dark mode
   if (document.documentElement.getAttribute('data-theme') === 'dark') {
