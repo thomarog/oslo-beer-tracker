@@ -163,7 +163,6 @@ function getSortedVenues(venues) {
 // MAP
 // =========================================================
 let map;
-const markers = new Map(); // id -> {el, marker, popup}
 
 function showMapFallback(reason) {
   const mapEl = document.getElementById('map');
@@ -216,7 +215,9 @@ function initMap() {
 
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
-  map.on('load', () => {
+  map.on('load', async () => {
+    await registerPinIcons();
+    addPinLayer();
     renderMarkers();
     // Force resize in case container was 0-height at init (common in iframe wrappers)
     setTimeout(() => map.resize(), 50);
@@ -235,48 +236,138 @@ function initMap() {
   });
 }
 
-function createMarkerElement(v) {
-  const halfL = effectiveHalfLiter(v);
-  const tier = tierForPricePerLiter(computePricePerLiter(v));
-  const el = document.createElement('div');
-  el.className = 'map-marker';
-  el.dataset.tier = tier;
-  el.dataset.id = v.id;
-  el.setAttribute('role', 'button');
-  el.setAttribute('aria-label', `${v.name}, ${halfL} kr per halvliter`);
-  el.innerHTML = `
-    <div class="map-marker-inner">
-      <svg viewBox="0 0 34 40" xmlns="http://www.w3.org/2000/svg">
-        <path class="pin-bg" d="M17 0C7.6 0 0 7.3 0 16.4 0 28.5 15 39.4 16 39.9c.3.2.7.2 1 0C18 39.4 34 28.5 34 16.4 34 7.3 26.4 0 17 0z"/>
-        <circle cx="17" cy="16" r="11" fill="white" opacity="0.95"/>
-        <text class="pin-price" x="17" y="16" fill="#0b1d2a">${halfL}</text>
-      </svg>
-    </div>
-  `;
-  return el;
+// =========================================================
+// Native symbol-layer pins (rendered inside WebGL canvas)
+// These are drawn in the same pipeline as map tiles, so they
+// cannot drift relative to the map during zoom — unlike DOM
+// markers, which suffer from sub-pixel drift on iOS Safari.
+// =========================================================
+const TIER_COLORS = {
+  low:  { fill: '#2f8a5a', text: '#ffffff' },
+  mid:  { fill: '#d99921', text: '#3a2500' },
+  high: { fill: '#c4453a', text: '#ffffff' },
+};
+
+function buildPinSvgDataUrl(tier, price, selected = false) {
+  const c = TIER_COLORS[tier] || TIER_COLORS.mid;
+  const stroke = selected ? '#0b1d2a' : 'rgba(0,0,0,0.25)';
+  const strokeWidth = selected ? 2.5 : 1;
+  const scale = selected ? 1.18 : 1;
+  // We render at 2x for retina crispness (MapLibre handles pixelRatio scaling)
+  const priceStr = String(price);
+  // Adjust font size when 3-digit
+  const fontSize = priceStr.length >= 3 ? 11 : 13;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(68*scale)}" height="${Math.round(80*scale)}" viewBox="0 0 34 40">
+    <path d="M17 0.5C7.8 0.5 0.5 7.6 0.5 16.4 0.5 28.3 15.3 39.1 16.3 39.6c.2.1.5.1.7 0C18 39.1 33.5 28.3 33.5 16.4 33.5 7.6 26.2 0.5 17 0.5z" fill="${c.fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>
+    <circle cx="17" cy="16" r="10.5" fill="rgba(255,255,255,0.96)"/>
+    <text x="17" y="16" fill="${c.text === '#ffffff' ? '#0b1d2a' : c.text}" font-family="ui-sans-serif, system-ui, -apple-system, 'Cabinet Grotesk', sans-serif" font-size="${fontSize}" font-weight="800" text-anchor="middle" dominant-baseline="central">${priceStr}</text>
+  </svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+function loadImageAsync(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+// Unique pin icons are generated per (tier, price, selected) combo and cached
+const registeredIcons = new Set();
+async function ensurePinIcon(tier, price, selected) {
+  const id = `pin-${tier}-${price}${selected ? '-sel' : ''}`;
+  if (registeredIcons.has(id) || map.hasImage(id)) return id;
+  const img = await loadImageAsync(buildPinSvgDataUrl(tier, price, selected));
+  if (!map.hasImage(id)) {
+    map.addImage(id, img, { pixelRatio: 2 });
+  }
+  registeredIcons.add(id);
+  return id;
+}
+
+async function registerPinIcons() {
+  // Pre-register icons for every venue up front
+  const all = VENUES || [];
+  const seen = new Set();
+  for (const v of all) {
+    const tier = tierForPricePerLiter(computePricePerLiter(v));
+    const price = effectiveHalfLiter(v);
+    const key = `${tier}|${price}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      await ensurePinIcon(tier, price, false);
+      await ensurePinIcon(tier, price, true);
+    } catch (e) { console.warn('icon load failed', key, e); }
+  }
+}
+
+function addPinLayer() {
+  if (map.getSource('venues')) return;
+  map.addSource('venues', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  });
+  map.addLayer({
+    id: 'venue-pins',
+    type: 'symbol',
+    source: 'venues',
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': 0.5, // icons are 2x; render at 1x
+      'icon-anchor': 'bottom',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'symbol-sort-key': ['get', 'sortKey'],
+    },
+  });
+
+  // Click / tap handling
+  map.on('click', 'venue-pins', (e) => {
+    const f = e.features?.[0];
+    if (!f) return;
+    selectVenue(f.properties.id);
+  });
+  map.on('mouseenter', 'venue-pins', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'venue-pins', () => { map.getCanvas().style.cursor = ''; });
 }
 
 function renderMarkers() {
-  // Remove old
-  for (const { marker } of markers.values()) marker.remove();
-  markers.clear();
-
+  if (!map || !map.getSource) return;
   const venues = getFilteredVenues();
-  for (const v of venues) {
-    const el = createMarkerElement(v);
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      selectVenue(v.id);
-    });
-    const marker = new maplibregl.Marker({
-      element: el,
-      anchor: 'bottom',
-      // Prevents sub-pixel drift during zoom on iOS Safari (MapLibre v4 feature)
-      subpixelPositioning: true,
-    })
-      .setLngLat([v.lng, v.lat])
-      .addTo(map);
-    markers.set(v.id, { el, marker });
+  const selId = state.selectedId;
+
+  const features = venues.map((v) => {
+    const tier = tierForPricePerLiter(computePricePerLiter(v));
+    const price = effectiveHalfLiter(v);
+    const isSel = v.id === selId;
+    const iconId = `pin-${tier}-${price}${isSel ? '-sel' : ''}`;
+    // Ensure icon exists (should be pre-registered but filter can include edge cases)
+    if (!map.hasImage(iconId)) {
+      ensurePinIcon(tier, price, isSel).then(() => {
+        const src = map.getSource('venues');
+        if (src) src.setData(src._data);
+      });
+    }
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
+      properties: {
+        id: v.id,
+        name: v.name,
+        icon: iconId,
+        // Draw selected on top; then cheaper prices above more expensive
+        sortKey: isSel ? 100000 : -price,
+      },
+    };
+  });
+
+  const src = map.getSource('venues');
+  if (src) {
+    src.setData({ type: 'FeatureCollection', features });
   }
 
   updateResultsCount(venues.length);
@@ -327,7 +418,7 @@ function renderSelectedCard(v) {
   sc.querySelector('[data-close-selected]').addEventListener('click', () => {
     state.selectedId = null;
     renderSelectedCard(null);
-    markers.forEach(({ el }) => el.classList.remove('active'));
+    renderMarkers();
   });
   sc.querySelector('[data-view-details]').addEventListener('click', () => {
     openVenueSheet(v.id);
@@ -337,9 +428,7 @@ function renderSelectedCard(v) {
 function selectVenue(id) {
   state.selectedId = id;
   const v = VENUES.find((x) => x.id === id);
-  markers.forEach(({ el }) => el.classList.remove('active'));
-  const m = markers.get(id);
-  if (m) m.el.classList.add('active');
+  renderMarkers(); // re-renders with `selected` icon for this id
   flyToVenue(v);
   renderSelectedCard(v);
 }
