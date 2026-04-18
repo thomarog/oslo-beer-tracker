@@ -173,6 +173,7 @@ function showMapFallback(reason) {
       <div class="map-fallback-inner">
         <strong>Map couldn’t load</strong>
         <p>Switch to the <button class="fallback-link" onclick="document.querySelector('[data-testid=tab-list]').click()">list view</button> to browse all 24 bars.</p>
+        <p class="map-fallback-debug">Reason: ${String(reason).slice(0,120)}</p>
       </div>
     </div>`;
   console.warn('Map fallback:', reason);
