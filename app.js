@@ -268,7 +268,12 @@ function renderMarkers() {
       e.stopPropagation();
       selectVenue(v.id);
     });
-    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+    const marker = new maplibregl.Marker({
+      element: el,
+      anchor: 'bottom',
+      // Prevents sub-pixel drift during zoom on iOS Safari (MapLibre v4 feature)
+      subpixelPositioning: true,
+    })
       .setLngLat([v.lng, v.lat])
       .addTo(map);
     markers.set(v.id, { el, marker });
